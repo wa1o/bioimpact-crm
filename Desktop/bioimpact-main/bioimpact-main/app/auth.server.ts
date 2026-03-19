@@ -83,96 +83,103 @@ export async function registrarUsuario(formData: FormData) {
           table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
           img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
           table { border-collapse: collapse !important; }
-              @media (prefers-color-scheme: dark) {
-          .dark-mode-bg { background-color: #1a1f19 !important; }
-          .dark-mode-text { color: #ffffff !important; }
-          .dark-mode-border { border-top: 1px solid #444444 !important; }
-        }
+          
+          @media (prefers-color-scheme: dark) {
+        body { background-color: #0f1419 !important; }
+        .email-container { background-color: #1a1f26 !important; }
+        .dark-mode-text { color: #e0e0e0 !important; }
+        .dark-mode-heading { color: #4ade80 !important; }
+        .dark-mode-border { border-color: #333333 !important; }
+        .dark-mode-bg { background-color: #242a33 !important; }
+        .dark-mode-link { color: #4ade80 !important; }
+        .dark-mode-button { background-color: #2d5a3d !important; }
+        .dark-mode-opacity { opacity: 0.7 !important; }
+          }
         </style>
       </head>
       <body style="margin: 0 !important; padding: 0 !important; background-color: #f4f4f4;">
         <table border="0" cellpadding="0" cellspacing="0" width="100%">
           <tr>
-            <td align="center" style="padding: 20px 0;">
-              <table border="0" cellpadding="0" cellspacing="0" width="680" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+        <td align="center" style="padding: 20px 0;">
+          <table border="0" cellpadding="0" cellspacing="0" width="680" class="email-container" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+            <tr>
+          <td align="center" style="padding: 10px 40px; font-family: Arial, sans-serif; font-size: 12px; color: #3f3f3f; opacity: 0.5;" class="dark-mode-opacity dark-mode-text">
+            Si tienes problemas para ver este correo, haz clic <a href="#" style="color: #3f3f3f;" class="dark-mode-link">aquí</a>.
+          </td>
+            </tr>
+            <tr>
+          <td align="center" style="padding: 0 40px;">
+            <hr style="border: 0; border-top: 1px solid #d1d1d1; margin: 0;" class="dark-mode-border">
+          </td>
+            </tr>
+            <tr>
+          <td style="padding: 40px 40px 20px 40px;">
+            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+            <td width="60%" valign="top" style="font-family: Arial, sans-serif;">
+              <h1 style="margin: 0; color: #42505c; font-size: 48px; line-height: 56px; font-weight: bold;" class="dark-mode-heading">
+                ¡Solo un paso más ${nombre}!
+              </h1>
+              <p style="margin: 25px 0 0 0; color: #3f3f3f; font-size: 14px; line-height: 24px;" class="dark-mode-text">
+                Haz clic en el botón <strong>"¡Da click aquí para confirmar!"</strong> para autenticar tu nueva cuenta.
+              </p>
+            </td>
+            <td width="40%" align="right" valign="middle">
+              <img src="cid:logo_bioimpact" alt="BioImpact" width="220" style="display: block; border-radius: 10px;">
+            </td>
+              </tr>
+            </table>
+          </td>
+            </tr>
+            <tr>
+          <td style="padding: 0 40px 30px 40px;">
+            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+              <tr><td style="font-family: Arial, sans-serif; font-size: 12px; color: #333333; padding-bottom: 5px;" class="dark-mode-text">Link de Activación</td></tr>
+              <tr>
+            <td style="border: 1px solid #d1d1d1; padding: 15px; background-color: #f9f9f9; border-radius: 4px;" class="dark-mode-border dark-mode-bg">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
                 <tr>
-                  <td align="center" style="padding: 10px 40px; font-family: Arial, sans-serif; font-size: 12px; color: #3f3f3f; opacity: 0.5;">
-                    Si tienes problemas para ver este correo, haz clic <a href="#" style="color: #3f3f3f;">aquí</a>.
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center" style="padding: 0 40px;">
-                    <hr style="border: 0; border-top: 1px solid #d1d1d1; margin: 0;">
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 40px 40px 20px 40px;">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                      <tr>
-                        <td width="60%" valign="top" style="font-family: Arial, sans-serif;">
-                          <h1 style="margin: 0; color: #42505c; font-size: 48px; line-height: 56px; font-weight: bold;">
-                            ¡Solo un paso más ${nombre}!
-                          </h1>
-                          <p style="margin: 25px 0 0 0; color: #3f3f3f; font-size: 14px; line-height: 24px;">
-                            Haz clic en el botón <strong>“¡Da click aquí para confirmar!”</strong> para autenticar tu nueva cuenta.
-                          </p>
-                        </td>
-                        <td width="40%" align="right" valign="middle">
-                          <img src="cid:logo_bioimpact" alt="BioImpact" width="220" style="display: block; border-radius: 10px;">
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 0 40px 30px 40px;">
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                      <tr><td style="font-family: Arial, sans-serif; font-size: 12px; color: #333333; padding-bottom: 5px;">Link de Activación</td></tr>
-                      <tr>
-                        <td style="border: 1px solid #d1d1d1; padding: 15px; background-color: #f9f9f9; border-radius: 4px;">
-                          <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                            <tr>
-                              <td style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; opacity: 0.6;">${verifyUrl}</td>
-                              <td align="right" style="font-family: Arial, sans-serif; font-size: 12px; font-weight: bold;">
-                                <a href="${verifyUrl}" style="color: #225727; text-decoration: none;">COPIAR URL</a>
-                              </td>
-                            </tr>
-                          </table>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-                <tr>
-                  <td align="left" style="padding: 0 40px 40px 40px;">
-                    <table border="0" cellspacing="0" cellpadding="0" width="100%">
-                      <tr>
-                        <td align="center" bgcolor="#225727" style="border-radius: 4px;">
-                          <a href="${verifyUrl}" target="_blank" style="padding: 18px 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; color: #ffffff; text-decoration: none; display: block; width: 100%;">
-                            ¡Da click aquí para confirmar!
-                          </a>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center" style="padding: 20px 40px 40px 40px; font-family: Arial, sans-serif; font-size: 11px; color: #3f3f3f; line-height: 18px; opacity: 0.6;">
-                    Si no solicitaste este correo, puedes ignorarlo. Haz clic en <a href="#" style="color: #3f3f3f;">Darse de baja</a> en cualquier momento.
-                  </td>
+              <td style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; opacity: 0.6;" class="dark-mode-opacity dark-mode-text">${verifyUrl}</td>
+              <td align="right" style="font-family: Arial, sans-serif; font-size: 12px; font-weight: bold;">
+                <a href="${verifyUrl}" style="color: #225727; text-decoration: none;" class="dark-mode-link">COPIAR URL</a>
+              </td>
                 </tr>
               </table>
             </td>
+              </tr>
+            </table>
+          </td>
+            </tr>
+            <tr>
+          <td align="left" style="padding: 0 40px 40px 40px;">
+            <table border="0" cellspacing="0" cellpadding="0" width="100%">
+              <tr>
+            <td align="center" bgcolor="#225727" style="border-radius: 4px;" class="dark-mode-button">
+              <a href="${verifyUrl}" target="_blank" style="padding: 18px 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; color: #ffffff; text-decoration: none; display: block; width: 100%;">
+                ¡Da click aquí para confirmar!
+              </a>
+            </td>
+              </tr>
+            </table>
+          </td>
+            </tr>
+            <tr>
+          <td align="center" style="padding: 20px 40px 40px 40px; font-family: Arial, sans-serif; font-size: 11px; color: #3f3f3f; line-height: 18px; opacity: 0.6;" class="dark-mode-opacity dark-mode-text">
+            Si no solicitaste este correo, puedes ignorarlo. Haz clic en <a href="#" style="color: #3f3f3f;" class="dark-mode-link">Darse de baja</a> en cualquier momento.
+          </td>
+            </tr>
+          </table>
+        </td>
           </tr>
         </table>
       </body>
       </html>
-    `,
+        `,
         attachments: [
           {
-            filename: 'Logo Bioimpact.png',
-            path: './public/Logo Bioimpact.png',
-            cid: 'logo_bioimpact'
+        filename: 'Logo Bioimpact.png',
+        path: './public/Logo Bioimpact.png',
+        cid: 'logo_bioimpact'
           }
         ]
       });
