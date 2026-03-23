@@ -1,16 +1,13 @@
-// app/auth.server.ts
-import bcrypt from "bcrypt"; // Te recomiendo 'bcryptjs' para evitar líos de compilación
+import bcrypt from "bcrypt"; 
 import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import "dotenv/config";
 import nodemailer from "nodemailer";
-import { db } from "~/db.server";
+import { db } from "~/lib/prisma";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Cargar .env localizado en la raíz del proyecto (bioimpact-main)
 
 
 export async function registrarUsuario(formData: FormData) {
@@ -22,7 +19,6 @@ export async function registrarUsuario(formData: FormData) {
   const acceptTerms = formData.get("acceptTerms") === "on";
   console.log("Variable de correo:", process.env.MAIL_USER);
 
-  // 1. Validaciones básicas
   if (!nombre || !apellido || !email || !password) {
     return { error: "Por favor llena todos los campos obligatorios." };
   }
@@ -34,16 +30,14 @@ export async function registrarUsuario(formData: FormData) {
   }
 
   try {
-    
-    const [existing]: any = await db.execute(
-      "SELECT id FROM usuarios WHERE email = ?",
-      [email]
-    );
+    const existing = await db.usuario.findUnique({
+      where: { email: email },
+      select: { id_usuario: true } 
+    });
 
-    if (existing.length > 0) {
+    if (existing) {
       return { error: "Este correo ya está registrado." };
     }
-
     
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = crypto.randomBytes(32).toString("hex");
@@ -87,7 +81,7 @@ export async function registrarUsuario(formData: FormData) {
               <table border="0" cellpadding="0" cellspacing="0" width="680" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
                 <tr>
                   <td align="center" style="padding: 10px 40px; font-family: Arial, sans-serif; font-size: 12px; color: #3f3f3f; opacity: 0.5;">
-                    Si tienes problemas para ver este correo, haz clic <a href="#" style="color: #3f3f3f;">aquí</a>.
+                    Si tienes problemas para ver este correo, haz clic <a href="${verifyUrl}" style="color: #3f3f3f;">aquí</a>.
                   </td>
                 </tr>
                 <tr>
@@ -171,13 +165,16 @@ export async function registrarUsuario(formData: FormData) {
       return { error: "No se pudo enviar el email de verificación. Verifica tu conexión o intenta más tarde." };
     }
 
-    // 6. Solo guardar en Base de Datos SI el email se envió exitosamente
-    await db.execute(
-      `INSERT INTO usuarios 
-      (nombre, apellido, email, contrasena, verification_token, verificado) 
-      VALUES (?, ?, ?, ?, ?, false)`,
-      [nombre, apellido, email, hashedPassword, verificationToken]
-    );
+    await db.usuario.create({
+      data: {
+        nombre: nombre,
+        apellido: apellido,
+        email: email,
+        contrasena: hashedPassword,
+        token: verificationToken, 
+        verificado: false
+      }
+    });
 
     return { success: true };
   } catch (err) {

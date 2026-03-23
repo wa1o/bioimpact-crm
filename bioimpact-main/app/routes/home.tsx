@@ -1,6 +1,7 @@
-  import { useState } from "react";
+import { useState } from "react";
   import { Link, redirect, useActionData, Form } from "react-router";
-  import { db } from "~/db.server";
+  // Actualizado para apuntar a tu cliente de Prisma
+  import { db } from "~/lib/prisma"; 
   import { getSession, commitSession } from "~/session.server";
   import bcrypt from "bcrypt"; 
 
@@ -15,16 +16,21 @@
     }
 
     try {
-      const [rows]: any = await db.execute(
-        "SELECT id, nombre, email, contrasena, verificado FROM usuarios WHERE email = ?",
-        [email]
-      );
+      const usuarioDb = await db.usuario.findUnique({
+        where: { email: email }
+      });
 
-      if (rows.length === 0) {
+      if (!usuarioDb) {
         return { error: "Correo o contraseña incorrectos." };
       }
 
-      const usuario = rows[0];
+      const usuario = {
+        id: usuarioDb.id_usuario,
+        nombre: usuarioDb.nombre,
+        email: usuarioDb.email,
+        contrasena: usuarioDb.contrasena,
+        verificado: usuarioDb.verificado
+      };
 
       if (!usuario.verificado) {
         return { error: "Debes verificar tu cuenta antes de iniciar sesión." };
@@ -159,7 +165,7 @@
               <div className="flex-1 h-px bg-black/20" />
             </div>
 
-           
+            
           <div className="flex justify-center">
             <button
               type="button"

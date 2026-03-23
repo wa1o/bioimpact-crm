@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { db } from "~/db.server"; 
+import { db } from "~/lib/prisma"; 
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -10,15 +10,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   try {
-    const [rows]: any = await db.execute(
-      "SELECT verificado FROM usuarios WHERE email = ? LIMIT 1",
-      [email]
-    );
-
-    const usuario = rows[0];
+    const usuario = await db.usuario.findUnique({
+      where: { 
+        email: email 
+      },
+      select: { 
+        verificado: true 
+      }
+    });
 
     return { 
-      verificado: usuario ? usuario.verificado === 1 : false 
+      verificado: usuario ? usuario.verificado : false 
     };
     
   } catch (error) {

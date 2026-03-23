@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+model Usuario {
+  id_usuario  Int      @id @default(autoincrement())
+  nombre      String
+  apellido    String
+  email       String   @unique
+  contrasena  String   
+  token       String?  
+  verificado  Boolean  @default(false)
+
+  // Opcional pero muy recomendado: saber cuándo se registraron
+  creadoEn    DateTime @default(now())
+  actualizado DateTime @updatedAt
+  archivos   Archivo[]
+}
+
+model Archivo {
+  id_archivo Int      @id @default(autoincrement())
+  nombre     String
+  size       String
+  tipoIcono  String   // Para saber si pintar un PDF, una Imagen, etc.
+  createdAt  DateTime @default(now())
+  usuarioId  String
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id_usuario])
+}

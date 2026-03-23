@@ -1,4 +1,4 @@
-import { db } from "~/db.server";
+import { db } from "~/lib/prisma";
 
 export async function action({ request }: { request: Request }) {
   try {
@@ -12,22 +12,31 @@ export async function action({ request }: { request: Request }) {
       });
     }
 
-    const [rows]: any = await db.execute(
-      "SELECT id FROM usuarios WHERE verification_token = ?",
-      [token]
-    );
+    const usuario = await db.usuario.findFirst({
+      where: { 
+        token: token 
+      },
+      select: { 
+        id_usuario: true 
+      }
+    });
 
-    if (rows.length === 0) {
+    if (!usuario) {
       return new Response(JSON.stringify({ error: "Invalid token" }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    await db.execute(
-      "UPDATE usuarios SET verificado = true, verification_token = NULL WHERE id = ?",
-      [rows[0].id]
-    );
+    await db.usuario.update({
+      where: { 
+        id_usuario: usuario.id_usuario 
+      },
+      data: { 
+        verificado: true, 
+        token: null 
+      }
+    });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
