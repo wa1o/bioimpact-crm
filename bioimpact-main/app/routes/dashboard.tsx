@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useLoaderData, redirect, Form } from "react-router";
+import { db } from "~/lib/prisma";
 import { getSession, destroySession } from "~/session.server";
+import { supabase } from "~/lib/supabase.server";
+import { UploadedFilesListSection } from "~/components/UploadesFilesListSection";
 
-// ── 1. LOADER: Implementación estricta de cookies para proteger la ruta ──
+// ── 1. LOADER: Protege la ruta y carga toda la información ──
 export async function loader({ request }: { request: Request }) {
   const session = await getSession(request);
   const userId = session.get("userId");
@@ -10,45 +13,110 @@ export async function loader({ request }: { request: Request }) {
   // Si no hay cookie de sesión, lo pateamos al login
   if (!userId) throw redirect("/");
 
-  // Devolvemos los datos del usuario al componente visual
+  const usuario = await db.usuario.findUnique({
+    where: { id_usuario: userId },
+    include: {
+      archivos: {
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+
+  if (!usuario) throw redirect("/");
+
   return {
-    userId: session.get("userId"),
-    nombre: session.get("nombre") || "Usuario",
-    email: session.get("email"),
+    userId: usuario.id_usuario,
+    nombre: usuario.nombre,
+    email: usuario.email,
+    archivos: usuario.archivos,
   };
 }
 
-// ── 2. ACTION: Destruye la cookie cuando le dan a "Cerrar sesión" ──
+// ── 2. ACTION: Maneja tanto la subida de archivos como el cierre de sesión ──
 export async function action({ request }: { request: Request }) {
   const session = await getSession(request);
-  return redirect("/", {
-    headers: { "Set-Cookie": await destroySession(session) },
-  });
+  const userId = session.get("userId");
+
+  if (!userId) return { error: "No autorizado" };
+
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  // A) Lógica para Cerrar Sesión
+  if (intent === "logout") {
+    return redirect("/", {
+      headers: { "Set-Cookie": await destroySession(session) },
+    });
+  }
+
+  // B) Lógica para Subir Archivos a Supabase y Prisma
+  const files = formData.getAll("archivos") as File[];
+
+  if (!files || files.length === 0) {
+    return { error: "Por favor selecciona un archivo." };
+  }
+
+  try {
+    for (const file of files) {
+      if (file.size === 0) continue;
+
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "");
+      const filePath = `${userId}/${Date.now()}_${cleanFileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("archivos")
+        .upload(filePath, file, { contentType: file.type, upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("archivos").getPublicUrl(filePath);
+
+      const sizeInKB = Math.round(file.size / 1024);
+      const sizeStr = sizeInKB > 1024 ? `${(sizeInKB / 1024).toFixed(1)}MB` : `${sizeInKB}KB`;
+      const tipoIcono = file.type.includes("pdf") ? "PDF" : "IMAGE";
+
+      await db.archivo.create({
+        data: {
+          nombre: file.name,
+          size: sizeStr,
+          tipoIcono: tipoIcono,
+          url: publicUrlData.publicUrl,
+          usuarioId: userId,
+        },
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error general:", error);
+    return { error: "Error de servidor al procesar los archivos." };
+  }
 }
 
 // ==========================================
-// SVGs e Iconos (Mantenidos igual)
+// SVGs e Iconos 
 // ==========================================
-const GridIcon = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="7" height="7" rx="1" fill="currentColor" /><rect x="11" y="2" width="7" height="7" rx="1" fill="currentColor" /><rect x="2" y="11" width="7" height="7" rx="1" fill="currentColor" /><rect x="11" y="11" width="7" height="7" rx="1" fill="currentColor" /></svg>);
-const CalendarIcon = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M2 8h16" stroke="currentColor" strokeWidth="1.5" /><path d="M6 2v4M14 2v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
-const UsersIcon = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M2 17c0-3.314 2.686-6 6-6s6 2.686 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M14 5c1.657 0 3 1.343 3 3s-1.343 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M17 17c0-2.761-1.343-5-3-5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /></svg>);
-const ListIcon = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h12M4 10h12M4 14h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
-const CalendarIcon2 = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M2 8h16" stroke="currentColor" strokeWidth="1.5" /><path d="M6 2v4M14 2v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="10" cy="13" r="1.5" fill="currentColor" /></svg>);
-const RefreshIcon = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 10a6 6 0 016-6 6 6 0 014.243 1.757L16 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M16 4v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /><path d="M16 10a6 6 0 01-6 6 6 6 0 01-4.243-1.757L4 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M4 16v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>);
-const SettingsIcon = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.222 4.222l1.414 1.414M14.364 14.364l1.414 1.414M4.222 15.778l1.414-1.414M14.364 5.636l1.414-1.414" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
-const SearchIcon = () => ( <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="9" r="6" stroke="#6b7280" strokeWidth="1.5" fill="none" /><path d="M13.5 13.5L17 17" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" /></svg>);
-const PlusIcon = () => ( <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 3v10M3 8h10" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>);
-const CheckIcon = () => ( <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 7l3 3 6-6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>);
-const XIcon = () => ( <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l8 8M11 3l-8 8" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>);
-const CircleProgressIcon = () => ( <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="9" r="7" stroke="#3b82f6" strokeWidth="2" fill="none" strokeDasharray="22 22" strokeDashoffset="11" /><circle cx="9" cy="9" r="3" fill="#3b82f6" /></svg>);
-const WarningIcon = () => ( <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 2L1.5 12h11L7 2z" stroke="white" strokeWidth="1.5" strokeLinejoin="round" fill="none" /><path d="M7 6v3" stroke="white" strokeWidth="1.5" strokeLinecap="round" /><circle cx="7" cy="10.5" r="0.75" fill="white" /></svg>);
-const EditIcon = () => ( <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11 2l3 3-8 8H3v-3l8-8z" stroke="#9ca3af" strokeWidth="1.5" strokeLinejoin="round" fill="none" /></svg>);
-const ArrowRightIcon = () => ( <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 8h10M9 4l4 4-4 4" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+const GridIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="7" height="7" rx="1" fill="currentColor" /><rect x="11" y="2" width="7" height="7" rx="1" fill="currentColor" /><rect x="2" y="11" width="7" height="7" rx="1" fill="currentColor" /><rect x="11" y="11" width="7" height="7" rx="1" fill="currentColor" /></svg>);
+const CalendarIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M2 8h16" stroke="currentColor" strokeWidth="1.5" /><path d="M6 2v4M14 2v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
+const UsersIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M2 17c0-3.314 2.686-6 6-6s6 2.686 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M14 5c1.657 0 3 1.343 3 3s-1.343 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M17 17c0-2.761-1.343-5-3-5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /></svg>);
+const ListIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h12M4 10h12M4 14h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
+const CalendarIcon2 = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M2 8h16" stroke="currentColor" strokeWidth="1.5" /><path d="M6 2v4M14 2v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="10" cy="13" r="1.5" fill="currentColor" /></svg>);
+const RefreshIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 10a6 6 0 016-6 6 6 0 014.243 1.757L16 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M16 4v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /><path d="M16 10a6 6 0 01-6 6 6 6 0 01-4.243-1.757L4 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" /><path d="M4 16v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>);
+const SettingsIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.222 4.222l1.414 1.414M14.364 14.364l1.414 1.414M4.222 15.778l1.414-1.414M14.364 5.636l1.414-1.414" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>);
+const SearchIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="9" r="6" stroke="#6b7280" strokeWidth="1.5" fill="none" /><path d="M13.5 13.5L17 17" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" /></svg>);
+const PlusIcon = () => (<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 3v10M3 8h10" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>);
+const CheckIcon = () => (<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 7l3 3 6-6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>);
+const XIcon = () => (<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l8 8M11 3l-8 8" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>);
+const CircleProgressIcon = () => (<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="9" r="7" stroke="#3b82f6" strokeWidth="2" fill="none" strokeDasharray="22 22" strokeDashoffset="11" /><circle cx="9" cy="9" r="3" fill="#3b82f6" /></svg>);
+const WarningIcon = () => (<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 2L1.5 12h11L7 2z" stroke="white" strokeWidth="1.5" strokeLinejoin="round" fill="none" /><path d="M7 6v3" stroke="white" strokeWidth="1.5" strokeLinecap="round" /><circle cx="7" cy="10.5" r="0.75" fill="white" /></svg>);
+const EditIcon = () => (<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11 2l3 3-8 8H3v-3l8-8z" stroke="#9ca3af" strokeWidth="1.5" strokeLinejoin="round" fill="none" /></svg>);
+const ArrowRightIcon = () => (<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 8h10M9 4l4 4-4 4" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>);
 
-const BioImpactLogo = () => ( <div className="w-8 h-8 flex items-center justify-center"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 3L6 13h4L5 23h8v4h2v-4h8l-5-10h4L14 3z" fill="#2d6a2d" /></svg></div>);
-const GrupoSymaLogo = () => ( <div className="w-8 h-8 rounded-full bg-[#f15a24] flex items-center justify-center text-white text-[10px] font-bold">syma</div>);
-const ToyotaLogo = () => ( <div className="w-8 h-8 rounded-full flex items-center justify-center"><svg width="22" height="14" viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="11" cy="7" rx="10" ry="6" stroke="#d32f2f" strokeWidth="1.5" fill="none" /><ellipse cx="11" cy="7" rx="4" ry="6" stroke="#d32f2f" strokeWidth="1.5" fill="none" /><path d="M1 5h20" stroke="#d32f2f" strokeWidth="1.5" /></svg></div>);
-const AmericanIndustriesLogo = () => ( <div className="w-8 h-8 flex items-center justify-center"><div className="w-6 h-1 bg-[#1a365d] rounded" /></div>);
+const BioImpactLogo = () => (<div className="w-8 h-8 flex items-center justify-center"><svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 3L6 13h4L5 23h8v4h2v-4h8l-5-10h4L14 3z" fill="#2d6a2d" /></svg></div>);
+const GrupoSymaLogo = () => (<div className="w-8 h-8 rounded-full bg-[#f15a24] flex items-center justify-center text-white text-[10px] font-bold">syma</div>);
+const ToyotaLogo = () => (<div className="w-8 h-8 rounded-full flex items-center justify-center"><svg width="22" height="14" viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="11" cy="7" rx="10" ry="6" stroke="#d32f2f" strokeWidth="1.5" fill="none" /><ellipse cx="11" cy="7" rx="4" ry="6" stroke="#d32f2f" strokeWidth="1.5" fill="none" /><path d="M1 5h20" stroke="#d32f2f" strokeWidth="1.5" /></svg></div>);
+const AmericanIndustriesLogo = () => (<div className="w-8 h-8 flex items-center justify-center"><div className="w-6 h-1 bg-[#1a365d] rounded" /></div>);
 
 // ==========================================
 // Datos de Prueba
@@ -77,7 +145,7 @@ const pendientesData = [
 
 const tareasData = [
   { id: 1, date: "17 Marzo 2026", text: "Terminar UMAs" },
-  { id: 2, date: "20 Marzo 2026", text: "Entrgar manifiesto" }, // Typo from original maintained
+  { id: 2, date: "20 Marzo 2026", text: "Entrgar manifiesto" },
 ];
 
 // ==========================================
@@ -124,36 +192,36 @@ const StatusBadge = ({ statusType, status }: any) => {
 // ==========================================
 export default function Dashboard() {
   const loaderData = useLoaderData<typeof loader>();
-  // Calculamos las iniciales del usuario para el avatar
-  const iniciales = loaderData.nombre ? loaderData.nombre.substring(0, 2).toUpperCase() : "US";
-
   const [pendienteInput, setPendienteInput] = useState("");
 
+  // Agregamos un estado para saber en qué pestaña de la sidebar estamos
+  const [activeTab, setActiveTab] = useState("dashboard");
+
   const sideNavItems = [
-    { icon: <GridIcon />, active: true },
-    { icon: <CalendarIcon />, active: false },
-    { icon: <UsersIcon />, active: false },
-    { icon: <ListIcon />, active: false },
-    { icon: <CalendarIcon2 />, active: false },
-    { icon: <RefreshIcon />, active: false },
+    { id: "dashboard", icon: <GridIcon /> },
+    { id: "archivos", icon: <ListIcon /> }, // Utilizamos el ícono de lista para la pestaña de Archivos
+    { id: "calendario", icon: <CalendarIcon /> },
+    { id: "usuarios", icon: <UsersIcon /> },
+    { id: "calendario2", icon: <CalendarIcon2 /> },
+    { id: "refresh", icon: <RefreshIcon /> },
   ];
 
   return (
     <div className="bg-[#f0f2f5] w-full min-h-screen relative flex font-sans">
-      
+
       {/* Sidebar Navigation */}
-      <aside className="w-[72px] bg-white flex flex-col items-center py-6 border-r border-gray-200 flex-shrink-0 z-10">
-        <div className="mb-4 flex flex-col items-center gap-4">
-           <img src="/Logo Bioimpact.png" alt="Bioimpact Logo" className="w-20 h-12 object-contain" />
+      <aside className="w-[72px] bg-white flex flex-col items-center py-6 border-r border-gray-200 flex-shrink-0 z-20">
+        <div className="mb-4 flex flex-col items-center gap-4 cursor-pointer" onClick={() => setActiveTab("dashboard")}>
+          <img src="/Logo Bioimpact.png" alt="Bioimpact Logo" className="w-20 h-12 object-contain" />
         </div>
-        
+
         <nav className="flex flex-col items-center gap-4 w-full">
-          {sideNavItems.map((item, index) => (
+          {sideNavItems.map((item) => (
             <button
-              key={index}
-              className={`w-12 h-12 flex items-center justify-center rounded-full transition-colors ${
-                item.active ? "bg-[#2d6a2d] text-white shadow-md" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              }`}
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`w-12 h-12 flex items-center justify-center rounded-full transition-colors ${activeTab === item.id ? "bg-[#2d6a2d] text-white shadow-md" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                }`}
             >
               {item.icon}
             </button>
@@ -169,11 +237,11 @@ export default function Dashboard() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        
+
         {/* Top Header */}
-        <header className="bg-[#f8f9fa] h-[80px] flex items-center justify-between px-8 border-b border-gray-200">
+        <header className="bg-[#f8f9fa] h-[80px] flex items-center justify-between px-8 border-b border-gray-200 z-10">
           <h1 className="font-bold text-[#1a365d] text-3xl tracking-tight">
-            ¡Bienvenido, {loaderData.nombre}!
+            {activeTab === "archivos" ? "Gestor de Archivos" : `¡Bienvenido, ${loaderData.nombre}!`}
           </h1>
           <div className="flex items-center gap-5">
             <button className="bg-[#2d6a2d] hover:bg-[#245a24] text-white flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-colors shadow-sm">
@@ -183,12 +251,13 @@ export default function Dashboard() {
             <button className="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-400 hover:bg-gray-50 transition-colors shadow-sm">
               <SearchIcon />
             </button>
-            <div className="w-10 h-10 rounded-full overflow-hidden cursor-pointer shadow-sm">
-              {/* Fallback to initials if no image is available, but the design shows a face */}
-               <img src={`https://ui-avatars.com/api/?name=${loaderData.nombre}&background=random`} alt="User Avatar" className="w-full h-full object-cover" />
+            <div className="w-10 h-10 rounded-full overflow-hidden cursor-pointer shadow-sm bg-gray-200">
+              <img src={`https://ui-avatars.com/api/?name=${loaderData.nombre}&background=random`} alt="User Avatar" className="w-full h-full object-cover" />
             </div>
-             {/* 4. BOTÓN DE CERRAR SESIÓN */}
-             <Form method="post">
+
+            {/* BOTÓN DE CERRAR SESIÓN (Nota el input hidden) */}
+            <Form method="post">
+              <input type="hidden" name="intent" value="logout" />
               <button
                 type="submit"
                 className="text-sm font-semibold text-gray-500 hover:text-red-600 transition-colors"
@@ -199,189 +268,190 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Dashboard Body - Responsive Grid Layout */}
-        <main className="flex-1 p-8 overflow-y-auto">
-          <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* Left Column (Span 2 columns on large screens) */}
-            <div className="lg:col-span-2 flex flex-col gap-6">
-              
-              {/* Top Row: Cita Próxima & Proyectos */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* Cita Próxima Card */}
-                <div className="bg-[#2d6a2d] rounded-[24px] p-6 text-white relative overflow-hidden shadow-lg flex flex-col justify-between h-[340px]">
-                   {/* Decorative background circle (simulated) */}
-                  <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-white opacity-5 rounded-full blur-xl pointer-events-none"></div>
+        {/* Dashboard Body - Renderizado Condicional según la pestaña */}
+        <main className="flex-1 p-8 overflow-y-auto relative">
 
-                  <div>
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="font-bold text-white text-lg">Cita Próxima</h2>
-                      <div className="w-2.5 h-2.5 bg-white rounded-full opacity-80" />
-                    </div>
-                    
-                    <div className="flex items-start gap-4 mb-6">
-                      <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0 backdrop-blur-sm">
-                        <BioImpactLogo /> {/* Reusing the logo component as placeholder for the location icon */}
+          {/* ----- VISTA 1: DASHBOARD PRINCIPAL ----- */}
+          {activeTab === "dashboard" && (
+            <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column */}
+              <div className="lg:col-span-2 flex flex-col gap-6">
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Cita Próxima Card */}
+                  <div className="bg-[#2d6a2d] rounded-[24px] p-6 text-white relative overflow-hidden shadow-lg flex flex-col justify-between h-[340px]">
+                    <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-white opacity-5 rounded-full blur-xl pointer-events-none"></div>
+                    <div>
+                      <div className="flex items-center justify-between mb-6">
+                        <h2 className="font-bold text-white text-lg">Cita Próxima</h2>
+                        <div className="w-2.5 h-2.5 bg-white rounded-full opacity-80" />
                       </div>
-                      <div>
-                        <p className="font-bold text-white text-base">200 Washington</p>
-                        <p className="font-medium text-green-100 text-sm opacity-90">Monterrey, N.L. 89601</p>
+                      <div className="flex items-start gap-4 mb-6">
+                        <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0 backdrop-blur-sm">
+                          <BioImpactLogo />
+                        </div>
+                        <div>
+                          <p className="font-bold text-white text-base">200 Washington</p>
+                          <p className="font-medium text-green-100 text-sm opacity-90">Monterrey, N.L. 89601</p>
+                        </div>
+                      </div>
+                      <div className="mb-6">
+                        <p className="font-medium text-green-100 text-xs mb-1 opacity-90">Fecha</p>
+                        <p className="font-bold text-white text-base">17 de Febrero 2026, 17:30</p>
+                      </div>
+                      <div className="flex gap-8 mb-6">
+                        <div>
+                          <p className="font-medium text-green-100 text-xs mb-1 opacity-90">Empresa</p>
+                          <p className="font-bold text-white text-base">Bio Impact</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-green-100 text-xs mb-1 opacity-90">Consultor</p>
+                          <p className="font-bold text-white text-base">{loaderData.nombre}</p>
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="mb-6">
-                      <p className="font-medium text-green-100 text-xs mb-1 opacity-90">Fecha</p>
-                      <p className="font-bold text-white text-base">17 de Febrero 2026, 17:30</p>
-                    </div>
-                    
-                    <div className="flex gap-8 mb-6">
-                      <div>
-                        <p className="font-medium text-green-100 text-xs mb-1 opacity-90">Empresa</p>
-                        <p className="font-bold text-white text-base">Bio Impact</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-green-100 text-xs mb-1 opacity-90">Consultor</p>
-                        <p className="font-bold text-white text-base">{loaderData.nombre}</p>
-                      </div>
-                    </div>
+                    <button className="w-3/4 mx-auto bg-white text-[#2d6a2d] font-bold text-sm py-3 rounded-full hover:bg-green-50 transition-colors shadow-sm">
+                      Ver detalles
+                    </button>
                   </div>
 
-                  <button className="w-3/4 mx-auto bg-white text-[#2d6a2d] font-bold text-sm py-3 rounded-full hover:bg-green-50 transition-colors shadow-sm">
-                    Ver detalles
-                  </button>
+                  {/* Proyectos Card */}
+                  <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 h-[340px] flex flex-col">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="font-bold text-[#1a365d] text-lg">Proyectos</h2>
+                      <button className="font-semibold text-[#2d6a2d] text-sm hover:underline">Ver todos</button>
+                    </div>
+                    <div className="flex flex-col gap-1 overflow-y-auto pr-2 flex-1">
+                      {projectsData.map((project) => (
+                        <div key={project.id} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
+                          <div className="flex items-center gap-4">
+                            {project.logo}
+                            <div>
+                              <p className="font-bold text-[#1a365d] text-sm">{project.name}</p>
+                              <p className="font-medium text-gray-400 text-xs">{project.location}</p>
+                            </div>
+                          </div>
+                          <StatusBadge statusType={project.statusType} status={project.status} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Proyectos Card */}
-                <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 h-[340px] flex flex-col">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-bold text-[#1a365d] text-lg">Proyectos</h2>
-                    <button className="font-semibold text-[#2d6a2d] text-sm hover:underline">Ver todos</button>
+                {/* Grupo Syma Task Card */}
+                <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+                    <div className="flex items-center gap-4">
+                      <GrupoSymaLogo />
+                      <div>
+                        <p className="font-bold text-[#1a365d] text-base">Grupo Syma</p>
+                        <p className="font-medium text-gray-400 text-sm">Monterrey, NL</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="bg-[#e8f5e9] text-[#2d6a2d] font-bold text-xs px-4 py-1.5 rounded-full tracking-wide">
+                        EN PROCESO
+                      </span>
+                      <button className="text-gray-400 hover:text-[#2d6a2d] transition-colors">
+                        <ArrowRightIcon />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1 overflow-y-auto pr-2 flex-1">
-                    {projectsData.map((project) => (
-                      <div key={project.id} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
-                        <div className="flex items-center gap-4">
-                          {project.logo}
-                          <div>
-                            <p className="font-bold text-[#1a365d] text-sm">{project.name}</p>
-                            <p className="font-medium text-gray-400 text-xs">{project.location}</p>
-                          </div>
+
+                  <div className="flex flex-col gap-5 pl-2 relative">
+                    <div className="absolute left-4 top-2 bottom-2 w-px bg-gray-200 z-0"></div>
+                    {tareasData.map((tarea) => (
+                      <div key={tarea.id} className="flex items-start gap-4 relative z-10">
+                        <div className="w-5 h-5 rounded-full bg-[#2d6a2d] flex items-center justify-center flex-shrink-0 mt-1 shadow-sm border-2 border-white">
+                          <CheckIcon />
                         </div>
-                        <StatusBadge statusType={project.statusType} status={project.status} />
+                        <div>
+                          <p className="font-medium text-gray-400 text-xs mb-0.5">{tarea.date}</p>
+                          <p className="font-bold text-[#1a365d] text-sm">{tarea.text}</p>
+                        </div>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="mt-6 text-center">
+                    <button className="font-bold text-[#2d6a2d] text-sm hover:underline">
+                      Cargar más
+                    </button>
                   </div>
                 </div>
               </div>
 
-               {/* Grupo Syma Task Card (Spans full width of left column) */}
-              <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100">
-                <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
-                  <div className="flex items-center gap-4">
-                    <GrupoSymaLogo />
-                    <div>
-                      <p className="font-bold text-[#1a365d] text-base">Grupo Syma</p>
-                      <p className="font-medium text-gray-400 text-sm">Monterrey, NL</p>
-                    </div>
+              {/* Right Column */}
+              <div className="flex flex-col gap-6 h-full">
+                {/* Próximas Juntas */}
+                <div className="bg-[#f8fcf8] rounded-[24px] p-6 border border-green-50 shadow-sm flex-1">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="font-bold text-[#1a365d] text-lg">Próximas Juntas</h2>
+                    <button className="font-semibold text-[#2d6a2d] text-sm hover:underline">Ver todas</button>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="bg-[#e8f5e9] text-[#2d6a2d] font-bold text-xs px-4 py-1.5 rounded-full tracking-wide">
-                      EN PROCESO
-                    </span>
+                  <div className="flex flex-col gap-5">
+                    {proximasJuntasData.map((junta) => (
+                      <div key={junta.id} className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-gray-50">
+                        {junta.logo}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-[#1a365d] text-sm truncate">{junta.name}</p>
+                          <p className="font-medium text-gray-400 text-xs">{junta.date}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <span className="text-gray-400"><EditIcon /></span>
+                          <span className="font-medium text-gray-500 text-xs">{junta.time}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pendientes */}
+                <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 flex-1 flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="font-bold text-[#1a365d] text-lg">Pendientes</h2>
+                    <button className="font-semibold text-[#2d6a2d] text-sm hover:underline">Ver todo</button>
+                  </div>
+
+                  <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-2 mb-4">
+                    {pendientesData.map((pendiente) => (
+                      <div key={pendiente.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                        <span className={`font-medium text-xs w-24 flex-shrink-0 ${pendiente.urgent ? "text-[#d32f2f]" : "text-gray-400"}`}>
+                          {pendiente.date}
+                        </span>
+                        {pendiente.urgent && <div className="w-1.5 h-1.5 rounded-full bg-[#d32f2f] flex-shrink-0" />}
+                        <span className="font-semibold text-[#1a365d] text-sm truncate">{pendiente.text}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-100 flex items-center justify-between bg-gray-50 rounded-xl px-4 py-2">
+                    <input
+                      type="text"
+                      value={pendienteInput}
+                      onChange={(e) => setPendienteInput(e.target.value)}
+                      placeholder="Añade un pendiente"
+                      className="flex-1 font-medium text-gray-600 text-sm bg-transparent outline-none placeholder-gray-400"
+                    />
                     <button className="text-gray-400 hover:text-[#2d6a2d] transition-colors">
                       <ArrowRightIcon />
                     </button>
                   </div>
                 </div>
-                
-                <div className="flex flex-col gap-5 pl-2 relative">
-                   {/* Vertical timeline line */}
-                  <div className="absolute left-4 top-2 bottom-2 w-px bg-gray-200 z-0"></div>
-
-                  {tareasData.map((tarea, index) => (
-                    <div key={tarea.id} className="flex items-start gap-4 relative z-10">
-                      <div className="w-5 h-5 rounded-full bg-[#2d6a2d] flex items-center justify-center flex-shrink-0 mt-1 shadow-sm border-2 border-white">
-                        <CheckIcon />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-400 text-xs mb-0.5">{tarea.date}</p>
-                        <p className="font-bold text-[#1a365d] text-sm">{tarea.text}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                
-                <div className="mt-6 text-center">
-                  <button className="font-bold text-[#2d6a2d] text-sm hover:underline">
-                    Cargar más
-                  </button>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Right Column */}
-            <div className="flex flex-col gap-6 h-full">
-              
-              {/* Próximas Juntas */}
-              <div className="bg-[#f8fcf8] rounded-[24px] p-6 border border-green-50 shadow-sm flex-1">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="font-bold text-[#1a365d] text-lg">Próximas Juntas</h2>
-                  <button className="font-semibold text-[#2d6a2d] text-sm hover:underline">Ver todas</button>
-                </div>
-                <div className="flex flex-col gap-5">
-                  {proximasJuntasData.map((junta) => (
-                    <div key={junta.id} className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-gray-50">
-                      {junta.logo}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-[#1a365d] text-sm truncate">{junta.name}</p>
-                        <p className="font-medium text-gray-400 text-xs">{junta.date}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                         <span className="text-gray-400"><EditIcon/></span>
-                         <span className="font-medium text-gray-500 text-xs">{junta.time}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Pendientes */}
-              <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-bold text-[#1a365d] text-lg">Pendientes</h2>
-                  <button className="font-semibold text-[#2d6a2d] text-sm hover:underline">Ver todo</button>
-                </div>
-                
-                <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-2 mb-4">
-                  {pendientesData.map((pendiente) => (
-                    <div key={pendiente.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                      <span className={`font-medium text-xs w-24 flex-shrink-0 ${pendiente.urgent ? "text-[#d32f2f]" : "text-gray-400"}`}>
-                        {pendiente.date}
-                      </span>
-                      {pendiente.urgent && <div className="w-1.5 h-1.5 rounded-full bg-[#d32f2f] flex-shrink-0" />}
-                      <span className="font-semibold text-[#1a365d] text-sm truncate">{pendiente.text}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-4 border-t border-gray-100 flex items-center justify-between bg-gray-50 rounded-xl px-4 py-2">
-                  <input
-                    type="text"
-                    value={pendienteInput}
-                    onChange={(e) => setPendienteInput(e.target.value)}
-                    placeholder="Añade un pendiente"
-                    className="flex-1 font-medium text-gray-600 text-sm bg-transparent outline-none placeholder-gray-400"
-                  />
-                  <button className="text-gray-400 hover:text-[#2d6a2d] transition-colors">
-                    <ArrowRightIcon />
-                  </button>
-                </div>
               </div>
             </div>
+          )}
 
-          </div>
+          {/* ----- VISTA 2: GESTOR DE ARCHIVOS ----- */}
+          {activeTab === "archivos" && (
+            <div className="relative w-full min-h-[850px] -mt-4">
+              {/* El componente UploadedFilesListSection usa estilos "absolute", 
+                 al envolverlo en este div relativo le damos un espacio seguro en la pantalla.
+               */}
+              <UploadedFilesListSection archivos={loaderData.archivos} />
+            </div>
+          )}
+
         </main>
       </div>
     </div>

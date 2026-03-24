@@ -9,4 +9,5 @@ export default [
   route("dashboard", "routes/dashboard.tsx"),
   route("cargando", "routes/cargando.tsx"),
   route("api/check-status", "routes/api.check-status.ts"),
+  route("subir-archivo", "routes/subir-archivo.tsx"),
 ] satisfies RouteConfig;
