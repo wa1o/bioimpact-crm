@@ -54,6 +54,8 @@ export default function Registro() {
             <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm text-center">
               {actionData.error}
             </div>
+
+            
           )}
 
           {/* Usamos <Form> de react-router para que gestione el envío automáticamente */}
