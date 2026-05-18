@@ -10,4 +10,5 @@ export default [
   route("cargando", "routes/cargando.tsx"),
   route("api/check-status", "routes/api.check-status.ts"),
   route("subir-archivo", "routes/subir-archivo.tsx"),
+  route("eventos", "routes/eventos.ts"),
 ] satisfies RouteConfig;

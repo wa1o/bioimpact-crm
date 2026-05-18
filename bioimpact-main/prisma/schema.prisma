@@ -8,29 +8,161 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum EventType {
+  Deadline
+  Pagos
+  Reunión
+}
+
+enum UserRole {
+  admin
+  contador
+  consultor
+  cliente
+}
+
+// ─────────────────────────────────────────
+// MODELOS
+// ─────────────────────────────────────────
+
 model Usuario {
   id_usuario  Int      @id @default(autoincrement())
   nombre      String
   apellido    String
   email       String   @unique
-  contrasena  String   
-  token       String?  
+  password_hash  String
+  token       String?
   verificado  Boolean  @default(false)
-
-  // Opcional pero muy recomendado: saber cuándo se registraron
+  rol         UserRole @default(cliente)  // ← agregado del diagrama
+  activo      Boolean  @default(true)     // ← agregado del diagrama
   creadoEn    DateTime @default(now())
   actualizado DateTime @updatedAt
-  archivos   Archivo[]
+
+  // Relaciones
+  archivos             Archivo[]
+  eventos              Evento[]
+  formularios          Formulario[]
+  facturas_contador    Factura[]    @relation("FacturaContador")
+  facturas_creadas     Factura[]    @relation("FacturaCreador")
+  proyectos_encargado  Encargado[]
+
+  @@map("usuario")
+}
+
+model Cliente {
+
+  
+  id_cliente  Int      @id @default(autoincrement())
+  nombre      String
+  email       String?  @unique
+  telefono    String?
+  empresa     String?
+  activo      Boolean  @default(true)
+  creadoEn    DateTime @default(now())
+
+  // Relaciones
+  proyectos   Proyecto[]
+  facturas    Factura[]
+  formularios Formulario[]
+
+  @@map("cliente")
+}
+
+model Proyecto {
+  id_proyecto  Int       @id @default(autoincrement())
+  nombre       String
+  estado       String
+  fecha_inicio DateTime
+  fecha_fin    DateTime?
+
+  // FK cliente
+  cliente_id   Int
+  cliente      Cliente   @relation(fields: [cliente_id], references: [id_cliente])
+
+  // Relaciones
+  archivos     Archivo[]
+  eventos      Evento[]
+  encargados   Encargado[]
+
+  @@map("proyecto")
 }
 
 model Archivo {
-  id_archivo Int      @id @default(autoincrement())
-  nombre     String
-  size       String
-  tipoIcono  String
-  url        String   
-  createdAt  DateTime @default(now())
-  
-  usuarioId  Int
-  usuario    Usuario  @relation(fields: [usuarioId], references: [id_usuario])
+  id_archivo  Int      @id @default(autoincrement())
+  nombre      String
+  size        String
+  tipoIcono   String
+  url         String
+  createdAt   DateTime @default(now())
+
+  // FK usuario (subido_por)
+  usuarioId   Int
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id_usuario])
+
+  // FK proyecto ← agregado del diagrama
+  proyecto_id Int?
+  proyecto    Proyecto? @relation(fields: [proyecto_id], references: [id_proyecto])
+
+  @@map("archivo")
+}
+
+model Evento {
+  id_evento   Int        @id @default(autoincrement())
+  titulo      String
+  fecha       DateTime?  @db.Timestamptz
+  tipo        EventType?
+
+  proyecto_id Int?
+  proyecto    Proyecto?  @relation(fields: [proyecto_id], references: [id_proyecto])
+
+  usuario_id  Int?
+  usuario     Usuario?   @relation(fields: [usuario_id], references: [id_usuario])
+
+  @@map("evento")
+}
+
+model Factura {
+  id_factura         Int      @id @default(autoincrement())
+  estado             String
+  fecha              DateTime @db.Date
+  monto              Decimal  @db.Decimal
+
+  cliente_id         Int
+  cliente            Cliente  @relation(fields: [cliente_id], references: [id_cliente])
+
+  contador_id        Int
+  contador           Usuario  @relation("FacturaContador", fields: [contador_id], references: [id_usuario])
+
+  usuario_creador_id Int
+  usuario_creador    Usuario  @relation("FacturaCreador", fields: [usuario_creador_id], references: [id_usuario])
+
+  @@map("factura")
+}
+
+model Formulario {
+  id_formulario Int      @id @default(autoincrement())
+  fecha_envio   DateTime @db.Timestamptz
+
+  cliente_id    Int
+  cliente       Cliente  @relation(fields: [cliente_id], references: [id_cliente])
+
+  usuario_id    Int
+  usuario       Usuario  @relation(fields: [usuario_id], references: [id_usuario])
+
+  @@map("formulario")
+}
+
+model Encargado {
+  usuario_id  Int
+  proyecto_id Int
+
+  usuario     Usuario  @relation(fields: [usuario_id], references: [id_usuario])
+  proyecto    Proyecto @relation(fields: [proyecto_id], references: [id_proyecto])
+
+  @@id([usuario_id, proyecto_id])
+  @@map("encargado")
 }

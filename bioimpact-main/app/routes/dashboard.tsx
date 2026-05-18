@@ -1,5 +1,38 @@
-import { useState } from "react";
-import { useLoaderData, redirect, Form } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Form, redirect, useFetcher, useLoaderData } from "react-router";
+import { Calendar, momentLocalizer } from "react-big-calendar";
+import moment from "moment";
+
+type ProjectStub = {
+  id: string | number;
+  logo?: React.ReactNode;
+  name?: string;
+  location?: string;
+  statusType?: string;
+  status?: string;
+};
+
+type JuntaStub = {
+  id: string | number;
+  logo?: React.ReactNode;
+  name?: string;
+  date?: string;
+  time?: string;
+};
+
+type PendienteStub = {
+  id: string | number;
+  date?: string;
+  urgent?: boolean;
+  text?: string;
+};
+
+type TareaStub = {
+  id: string | number;
+  date?: string;
+  text?: string;
+};
+
 import { db } from "~/lib/prisma";
 import { getSession, destroySession } from "~/session.server";
 import { supabase } from "~/lib/supabase.server";
@@ -121,36 +154,309 @@ const AmericanIndustriesLogo = () => (<div className="w-8 h-8 flex items-center 
 // ==========================================
 // Datos de Prueba
 // ==========================================
-const projectsData = [
-  { id: 1, name: "Bio Impact", location: "Monterrey, Nuevo León", status: "Completo", statusType: "success", logo: <BioImpactLogo /> },
-  { id: 2, name: "Grupo Syma", location: "Monterrey, Nuevo León", status: "No iniciado", statusType: "error", logo: <GrupoSymaLogo /> },
-  { id: 3, name: "Toyota Tsusho México", location: "Monterrey, Nuevo León", status: "En Progreso", statusType: "progress", logo: <ToyotaLogo /> },
-  { id: 4, name: "American Industries", location: "Monterrey, Nuevo León", status: "Revisón Necesaria", statusType: "warning", logo: <AmericanIndustriesLogo /> },
-];
+const projectsData: ProjectStub[] = [];
 
-const proximasJuntasData = [
-  { id: 1, name: "Toyota Tusho México", date: "17 de Febrero 2026", time: "17:00", logo: <ToyotaLogo /> },
-  { id: 2, name: "Grupo Syma", date: "18 de Febrero 2026", time: "18:00", logo: <GrupoSymaLogo /> },
-  { id: 3, name: "American Industries", date: "18 de Febrero 2026", time: "20:00", logo: <AmericanIndustriesLogo /> },
-];
+const proximasJuntasData: JuntaStub[] = [];
 
-const pendientesData = [
-  { id: 1, date: "25 Feb 2026", text: "Manifiesto Bio Impact", urgent: true },
-  { id: 2, date: "15 Marzo 2026", text: "Cumplimiento Toyota", urgent: false },
-  { id: 3, date: "24 Nov 2022", text: "UMAs", urgent: false },
-  { id: 4, date: "24 Nov 2022", text: "PIMVS", urgent: false },
-  { id: 5, date: "24 Nov 2022", text: "Residuos de Manejo Especial", urgent: false },
-  { id: 6, date: "24 Nov 2022", text: "Manifiesto A. Industries", urgent: false },
-];
+const pendientesData: PendienteStub[] = [];
 
-const tareasData = [
-  { id: 1, date: "17 Marzo 2026", text: "Terminar UMAs" },
-  { id: 2, date: "20 Marzo 2026", text: "Entrgar manifiesto" },
-];
+// Tareas pendientes
+const tareasData: TareaStub[] = [];
 
 // ==========================================
 // Componente Auxiliar
 // ==========================================
+type CalendarioProps = { userId: number; nombre: string };
+
+const localizer = momentLocalizer(moment);
+
+const CalendarioView = ({ userId, nombre }: CalendarioProps) => {
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [month, setMonth] = useState<number>(new Date().getMonth() + 1);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>("");
+
+  const fetcher = useFetcher<any>();
+  const [eventos, setEventos] = useState<any[]>([]);
+  const [tipoModalError, setTipoModalError] = useState<string | null>(null);
+  const [form, setForm] = useState({ titulo: "", fecha: "", tipo: "Deadline" });
+  const submitFetcher = useFetcher<any>();
+
+  const eventsSourceUrl = useMemo(() => {
+    const params = new URLSearchParams({ year: String(year), month: String(month) });
+    return `/eventos?${params.toString()}`;
+  }, [year, month]);
+
+  useEffect(() => { fetcher.load(eventsSourceUrl); }, [eventsSourceUrl]);
+
+  useEffect(() => {
+    if (fetcher.data && Array.isArray(fetcher.data)) setEventos(fetcher.data);
+  }, [fetcher.data]);
+
+  useEffect(() => {
+    if (submitFetcher.state === "idle" && submitFetcher.data) {
+      fetcher.load(eventsSourceUrl);
+      setShowModal(false);
+      setForm({ titulo: "", fecha: "", tipo: "Deadline" });
+    }
+  }, [submitFetcher.state, submitFetcher.data, eventsSourceUrl]);
+
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    setTipoModalError(null);
+    if (!form.titulo.trim()) { setTipoModalError("El título es obligatorio."); return; }
+    if (!form.fecha) { setTipoModalError("La fecha es obligatoria."); return; }
+    submitFetcher.submit(
+      JSON.stringify({ titulo: form.titulo, fecha: form.fecha, tipo: form.tipo, proyecto_id: null, usuario_id: null }),
+      { method: "post", action: "/eventos", encType: "application/json" }
+    );
+  };
+
+  const handleDelete = (id: number) => {
+    submitFetcher.submit(JSON.stringify({ id }), { method: "delete", action: "/eventos", encType: "application/json" });
+  };
+
+  const MONTH_NAMES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const DAY_NAMES = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+
+  const prevMonth = () => {
+    if (month === 1) { setMonth(12); setYear(y => y - 1); }
+    else setMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (month === 12) { setMonth(1); setYear(y => y + 1); }
+    else setMonth(m => m + 1);
+  };
+
+  // Build calendar grid (Mon-first)
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  const startDow = (firstDay.getDay() + 6) % 7; // 0=Mon
+  const totalDays = lastDay.getDate();
+  const prevMonthDays = new Date(year, month - 1, 0).getDate();
+
+  const cells: { day: number; isCurrentMonth: boolean; dateStr: string }[] = [];
+  for (let i = 0; i < startDow; i++) {
+    const d = prevMonthDays - startDow + 1 + i;
+    const m2 = month === 1 ? 12 : month - 1;
+    const y2 = month === 1 ? year - 1 : year;
+    cells.push({ day: d, isCurrentMonth: false, dateStr: `${y2}-${String(m2).padStart(2,"0")}-${String(d).padStart(2,"0")}` });
+  }
+  for (let d = 1; d <= totalDays; d++) {
+    cells.push({ day: d, isCurrentMonth: true, dateStr: `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}` });
+  }
+  const remaining = 42 - cells.length;
+  for (let d = 1; d <= remaining; d++) {
+    const m2 = month === 12 ? 1 : month + 1;
+    const y2 = month === 12 ? year + 1 : year;
+    cells.push({ day: d, isCurrentMonth: false, dateStr: `${y2}-${String(m2).padStart(2,"0")}-${String(d).padStart(2,"0")}` });
+  }
+
+  const typeStyles: Record<string, { bg: string; border: string; text: string; dot: string }> = {
+    Deadline: { bg: "#fff0f0", border: "#fca5a5", text: "#dc2626", dot: "#ef4444" },
+    Pagos:    { bg: "#eff6ff", border: "#93c5fd", text: "#1d4ed8", dot: "#3b82f6" },
+    Reunión:  { bg: "#f0fdf4", border: "#86efac", text: "#16a34a", dot: "#22c55e" },
+    default:  { bg: "#f9fafb", border: "#e5e7eb", text: "#6b7280", dot: "#9ca3af" },
+  };
+
+  const getEventsForDate = (dateStr: string) =>
+    eventos.filter(e => e.fecha && e.fecha.startsWith(dateStr));
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  return (
+    <>
+      {/* Modal Crear Evento */}
+      {showModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)" }}
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-[#1a365d] text-xl">Crear Evento</h3>
+              <button onClick={() => setShowModal(false)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreate} className="flex flex-col gap-4">
+              {tipoModalError && (
+                <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl px-3 py-2 text-sm">{tipoModalError}</div>
+              )}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Título</label>
+                <input
+                  className="border border-gray-200 rounded-xl px-4 py-3 text-sm w-full text-[#1a365d] placeholder:text-gray-400 focus:outline-none focus:border-[#2d6a2d] focus:ring-2 focus:ring-[#2d6a2d]/15 transition-all"
+                  value={form.titulo}
+                  onChange={e => setForm(p => ({ ...p, titulo: e.target.value }))}
+                  placeholder="Ej: Reunión con cliente"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Fecha</label>
+                <input
+                  className="border border-gray-200 rounded-xl px-4 py-3 text-sm w-full text-[#1a365d] focus:outline-none focus:border-[#2d6a2d] focus:ring-2 focus:ring-[#2d6a2d]/15 transition-all"
+                  type="date"
+                  value={form.fecha || selectedDate}
+                  onChange={e => setForm(p => ({ ...p, fecha: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Tipo</label>
+                <div className="flex gap-2">
+                  {["Deadline","Pagos","Reunión"].map(tipo => {
+                    const s = typeStyles[tipo];
+                    return (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => setForm(p => ({ ...p, tipo }))}
+                        className="flex-1 py-2.5 rounded-xl text-xs font-bold border-2 transition-all"
+                        style={{
+                          background: form.tipo === tipo ? s.bg : "transparent",
+                          borderColor: form.tipo === tipo ? s.dot : "#e5e7eb",
+                          color: form.tipo === tipo ? s.text : "#9ca3af",
+                        }}
+                      >
+                        {tipo}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={submitFetcher.state === "submitting"}
+                className="mt-2 w-full py-3.5 bg-[#2d6a2d] rounded-xl font-bold text-white text-sm hover:bg-[#245a24] transition-colors shadow-sm disabled:bg-gray-300"
+              >
+                {submitFetcher.state === "submitting" ? "CREANDO..." : "CREAR EVENTO"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Calendario Principal */}
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 py-5 border-b border-gray-100">
+          <div className="flex items-center gap-4">
+            <h2 className="font-bold text-[#1a365d] text-2xl">Calendario</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            {/* Nav mes */}
+            <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-2 border border-gray-100">
+              <button onClick={prevMonth} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm transition-all text-gray-500">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+              <span className="font-bold text-[#1a365d] text-sm min-w-[160px] text-center">
+                {MONTH_NAMES[month - 1]}, {year}
+              </span>
+              <button onClick={nextMonth} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm transition-all text-gray-500">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+            </div>
+            {/* Botón añadir */}
+            <button
+              onClick={() => { setSelectedDate(""); setShowModal(true); }}
+              className="flex items-center gap-2 bg-[#2d6a2d] hover:bg-[#245a24] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-colors shadow-sm"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+              Añadir Evento
+            </button>
+          </div>
+        </div>
+
+        {/* Grid */}
+        <div className="px-6 pb-6 pt-4">
+          {/* Day headers */}
+          <div className="grid grid-cols-7 mb-1">
+            {DAY_NAMES.map(d => (
+              <div key={d} className="text-center text-xs font-semibold text-gray-400 uppercase tracking-wider py-2">
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Weeks */}
+          <div className="border border-gray-100 rounded-2xl overflow-hidden">
+            {weeks.map((week, wi) => (
+              <div key={wi} className={`grid grid-cols-7 ${wi < weeks.length - 1 ? "border-b border-gray-100" : ""}`}>
+                {week.map((cell, ci) => {
+                  const cellEvents = getEventsForDate(cell.dateStr);
+                  const isToday = cell.dateStr === todayStr;
+                  const isCurrentMonth = cell.isCurrentMonth;
+                  const MAX_VISIBLE = 3;
+                  const overflow = cellEvents.length - MAX_VISIBLE;
+
+                  return (
+                    <div
+                      key={ci}
+                      onClick={() => { setSelectedDate(cell.dateStr); setForm(p => ({ ...p, fecha: cell.dateStr })); setShowModal(true); }}
+                      className={`min-h-[110px] p-2 cursor-pointer transition-colors hover:bg-gray-50 ${ci < 6 ? "border-r border-gray-100" : ""} relative`}
+                    >
+                      {/* Day number */}
+                      <div className="flex items-start justify-between mb-1">
+                        <span
+                          className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full transition-colors
+                            ${isToday ? "bg-[#2d6a2d] text-white" : isCurrentMonth ? "text-[#1a365d]" : "text-gray-300"}`}
+                        >
+                          {cell.day}
+                        </span>
+                      </div>
+
+                      {/* Events */}
+                      <div className="flex flex-col gap-0.5">
+                        {cellEvents.slice(0, MAX_VISIBLE).map((ev, ei) => {
+                          const s = typeStyles[ev.tipo] ?? typeStyles.default;
+                          return (
+                            <div
+                              key={ei}
+                              onClick={e => { e.stopPropagation(); }}
+                              className="w-full rounded-lg px-2 py-1 text-[11px] font-semibold flex items-center gap-1.5 group relative"
+                              style={{ background: s.bg, borderLeft: `3px solid ${s.dot}`, color: s.text }}
+                            >
+                              <span className="truncate flex-1">{ev.titulo}</span>
+                              {ev.tipo === "Deadline" && (
+                                <span className="text-[9px] font-bold opacity-70 flex-shrink-0">Urgente</span>
+                              )}
+                              <button
+                                onClick={e => { e.stopPropagation(); handleDelete(ev.id_evento); }}
+                                className="opacity-0 group-hover:opacity-100 ml-1 text-current hover:opacity-100 transition-opacity flex-shrink-0"
+                              >
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {overflow > 0 && (
+                          <div className="text-[10px] font-bold text-white bg-[#2d6a2d] rounded-full w-6 h-6 flex items-center justify-center self-end mt-0.5">
+                            +{overflow}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
 const StatusBadge = ({ statusType, status }: any) => {
   if (statusType === "success") {
     return (
@@ -188,9 +494,14 @@ const StatusBadge = ({ statusType, status }: any) => {
 };
 
 // ==========================================
+// ==========================================
 // Componente Principal: Dashboard
 // ==========================================
 export default function Dashboard() {
+  // ==============================
+  // Calendario (Vista "calendario")
+  // ==============================
+
   const loaderData = useLoaderData<typeof loader>();
   const [pendienteInput, setPendienteInput] = useState("");
 
@@ -366,6 +677,7 @@ export default function Dashboard() {
                           <CheckIcon />
                         </div>
                         <div>
+
                           <p className="font-medium text-gray-400 text-xs mb-0.5">{tarea.date}</p>
                           <p className="font-bold text-[#1a365d] text-sm">{tarea.text}</p>
                         </div>
@@ -442,7 +754,19 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ----- VISTA 2: GESTOR DE ARCHIVOS ----- */}
+          {/* ----- VISTA 2: CALENDARIO ----- */}
+          {activeTab === "calendario" && (
+            <div className="max-w-[1100px] mx-auto">
+              <CalendarioView
+                userId={loaderData.userId}
+                nombre={loaderData.nombre}
+              />
+            </div>
+          )}
+
+
+
+          {/* ----- VISTA 3: GESTOR DE ARCHIVOS ----- */}
           {activeTab === "archivos" && (
             <div className="relative w-full min-h-[850px] -mt-4">
               {/* El componente UploadedFilesListSection usa estilos "absolute", 

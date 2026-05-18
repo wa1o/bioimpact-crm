@@ -22,14 +22,14 @@ export async function action({ request }: { request: Request }) {
       id: usuarioDb.id_usuario,
       nombre: usuarioDb.nombre,
       email: usuarioDb.email,
-      contrasena: usuarioDb.contrasena,
+      password_hash: usuarioDb.password_hash,
       verificado: usuarioDb.verificado,
     };
 
     if (!usuario.verificado)
       return { error: "Debes verificar tu cuenta antes de iniciar sesión." };
 
-    const contrasenaValida = await bcrypt.compare(password, usuario.contrasena);
+    const contrasenaValida = await bcrypt.compare(password, usuario.password_hash);
     if (!contrasenaValida) return { error: "Correo o contraseña incorrectos." };
 
     const session = await getSession(request);
@@ -233,10 +233,9 @@ export default function Home() {
             type="submit"
             className="mt-1 w-full py-3.5 font-semibold rounded-[14px] text-[15px] transition-all hover:-translate-y-0.5 active:scale-[0.98]"
             style={{
-              background: "linear-gradient(135deg, rgba(74,222,128,0.92) 0%, rgba(34,197,94,0.88) 100%)",
-              color: "#022c12",
-              boxShadow:
-                "0 4px 20px rgba(74,222,128,0.3), inset 0 1px 0 rgba(255,255,255,0.3)",
+              background: "linear-gradient(135deg, rgba(12, 183, 97, 0.92) 0%, rgba(4, 150, 101, 0.88) 100%)",
+              color: "#e9e9e9",
+              
             }}
           >
             Iniciar sesión

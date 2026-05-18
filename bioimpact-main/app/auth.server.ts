@@ -11,11 +11,11 @@ const __dirname = path.dirname(__filename);
 
 
 export async function registrarUsuario(formData: FormData) {
-  const nombre = formData.get("nombre") as string;
-  const apellido = formData.get("apellido") as string;
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const confirmPassword = formData.get("confirmPassword") as string;
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const apellido = String(formData.get("apellido") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
   const acceptTerms = formData.get("acceptTerms") === "on";
   console.log("Variable de correo:", process.env.MAIL_USER);
 
@@ -31,8 +31,8 @@ export async function registrarUsuario(formData: FormData) {
 
   try {
     const existing = await db.usuario.findUnique({
-      where: { email: email },
-      select: { id_usuario: true } 
+      where: { email },
+      select: { id_usuario: true }
     });
 
     if (existing) {
@@ -42,9 +42,30 @@ export async function registrarUsuario(formData: FormData) {
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = crypto.randomBytes(32).toString("hex");
 
-    
-    console.log("MAIL_USER:", process.env.MAIL_USER);
-    console.log("MAIL_PASS:", process.env.MAIL_PASS ? "***" : "undefined");
+    const usuario = await db.usuario.create({
+      data: {
+        nombre,
+        apellido,
+        email,
+        password_hash: hashedPassword,
+        token: verificationToken,
+        verificado: false,
+      },
+    });
+
+    const baseUrl = process.env.APP_URL || "http://localhost:5173";
+    const verifyUrl = `${baseUrl}/verificacion?token=${verificationToken}`;
+    const mailEnabled = Boolean(process.env.MAIL_USER && process.env.MAIL_PASS);
+
+    if (!mailEnabled) {
+      console.warn("Faltan credenciales de email en el servidor. Se creó el usuario sin enviar correo de verificación.");
+      return {
+        success: true,
+        email,
+        warning: "Cuenta creada correctamente, pero no se envió el correo de verificación porque faltan datos de correo en el servidor.",
+      };
+    }
+
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -53,9 +74,6 @@ export async function registrarUsuario(formData: FormData) {
       },
     });
 
-    const baseUrl = process.env.APP_URL || "http://localhost:5173";
-    const verifyUrl = `${baseUrl}/verificacion?token=${verificationToken}`;
-    
     try {
 
   await transporter.sendMail({
@@ -160,23 +178,17 @@ export async function registrarUsuario(formData: FormData) {
       }
     ]
   });
-    }catch (emailError) {
+    } catch (emailError) {
       console.error("Error enviando email:", emailError);
-      return { error: "No se pudo enviar el email de verificación. Verifica tu conexión o intenta más tarde." };
+      return {
+        success: true,
+        email,
+        warning:
+          "Cuenta creada correctamente, pero no se pudo enviar el correo de verificación. Verifica tu conexión o intenta más tarde.",
+      };
     }
 
-    await db.usuario.create({
-      data: {
-        nombre: nombre,
-        apellido: apellido,
-        email: email,
-        contrasena: hashedPassword,
-        token: verificationToken, 
-        verificado: false
-      }
-    });
-
-    return { success: true };
+    return { success: true, email };
   } catch (err) {
     console.error(err);
     return { error: "Error en el servidor. Intenta más tarde." };

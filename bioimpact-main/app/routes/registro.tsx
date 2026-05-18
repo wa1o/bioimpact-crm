@@ -5,9 +5,7 @@ import { registrarUsuario } from "~/auth.server";
 export async function action({ request }: { request: Request }) {
   const formData = await request.formData();
   const resultado = await registrarUsuario(formData);
-  
-  if (resultado.error) return { error: resultado.error };
-  return { success: true, email: formData.get("email") };
+  return resultado;
 }
 
 export default function Registro() {
@@ -18,7 +16,7 @@ export default function Registro() {
   const estaEnviando = navigation.state === "submitting";
 
   useEffect(() => {
-    if (actionData?.success) {
+    if (actionData?.success && !actionData?.warning) {
       navigate(`/check-mail?email=${encodeURIComponent(String(actionData.email))}`);
     }
   }, [actionData, navigate]);
@@ -54,8 +52,12 @@ export default function Registro() {
             <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm text-center">
               {actionData.error}
             </div>
+          )}
 
-            
+          {actionData?.warning && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-700 text-sm text-center">
+              {actionData.warning}
+            </div>
           )}
 
           {/* Usamos <Form> de react-router para que gestione el envío automáticamente */}
